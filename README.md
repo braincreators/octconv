@@ -30,6 +30,10 @@ An OctConv-equipped ResNet-152 can achieve 82.9% top-1 classification accuracy o
 
 ## Installation 
 
+From PyPI:
+
+    pip install octconv
+
 Bleeding edge version from github:
 
     pip install git+https://github.com/braincreators/octconv.git#egg=octconv
