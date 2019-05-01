@@ -3,6 +3,7 @@
 Implementation of [Drop an Octave: Reducing Spatial Redundancy in
 Convolutional Neural Networks with Octave Convolution](https://arxiv.org/pdf/1904.05049.pdf)
 
+![schema](assets/octconv.png)
 
 ## Paper Abstract
 
@@ -27,8 +28,6 @@ An OctConv-equipped ResNet-152 can achieve 82.9% top-1 classification accuracy o
  ImageNet with merely 22.2 GFLOPs.
 
 
-![schema](assets/octconv.png)
-
 ## Installation 
 
 Bleeding edge version from github:
@@ -51,6 +50,10 @@ conv3 = OctConv2d(in_channels=20, out_channels=1, kernel_size=3, alpha=(0.8, 0.)
 
 out = conv3(conv2(conv1(x)))  # shape: (5, 1, 200, 200)
 ```
+
+## Original implementation
+
+ - [facebookresearch/OctConv (MXNET)](https://github.com/facebookresearch/OctConv)
 
 ## Citation
 
