@@ -1,5 +1,7 @@
 # Octave Convolution
 
+[![Build Status](https://travis-ci.org/braincreators/octconv.svg?branch=master)](https://travis-ci.org/braincreators/octconv)
+
 Implementation of [Drop an Octave: Reducing Spatial Redundancy in
 Convolutional Neural Networks with Octave Convolution](https://arxiv.org/pdf/1904.05049.pdf)
 

@@ -123,8 +123,8 @@ class OctConv2d(nn.Module):
             assert x_l.shape[1] == self.in_channels['low']
 
     def __repr__(self):
-        s = """{}(in_channels=(low: {}, high: {}), out_channels=(low: {}, high: {}), 
-          kernel_size=({kernel}, {kernel}), stride=({stride}, {stride}), 
+        s = """{}(in_channels=(low: {}, high: {}), out_channels=(low: {}, high: {}),
+          kernel_size=({kernel}, {kernel}), stride=({stride}, {stride}),
           padding={}, alphas=({}, {}), bias={})""".format(
             self._get_name(), self.in_channels['low'], self.in_channels['high'],
             self.out_channels['low'], self.out_channels['high'],
