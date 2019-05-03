@@ -66,5 +66,16 @@ def test_forward_cascade():
     assert shape == (2, 1, 200, 200)
 
 
+@torch.no_grad()
+def test_forward_zero_alpha():
+    x = torch.rand(2, 3, 200, 200)  # (b, c, h, w)
+    conv1 = OctConv2d(in_channels=3, out_channels=10, kernel_size=3, alpha=0., padding=1)
+
+    out = conv1(x)
+
+    shape = tuple(out.shape)
+    assert shape == (2, 10, 200, 200)
+
+
 if __name__ == '__main__':
-    test_forward_single_input_stride2()
+    test_forward_zero_alpha()

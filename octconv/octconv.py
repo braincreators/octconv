@@ -99,7 +99,9 @@ class OctConv2d(nn.Module):
             x_l2l = self.conv_l2l(x_l2l) if self.out_channels['low'] > 0 else None
 
             # Low -> High
-            x_l2h = self.conv_l2h(x_l) if self.out_channels['high'] > 0 else None
+            x_l2h = self.conv_l2h(x_l) \
+                if (self.out_channels['high'] > 0 and self.in_channels['low'] > 0) \
+                else None
             x_l2h = F.interpolate(x_l2h, size=x_h2h.shape[-2:]) \
                 if (self.out_channels['high'] > 0 and self.stride == 1) else x_l2h
 
