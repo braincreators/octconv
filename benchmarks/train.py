@@ -253,8 +253,11 @@ def evaluate(model, criterion, data_loader, device):
 
 
 def main(args):
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
-    args.distributed = num_gpus > 1
+
+    is_distributed = int(os.environ["WORLD_SIZE"]) > 1 if 'WORLD_SIZE' in os.environ else False
+    args.distributed = is_distributed
+
+    num_gpus = int(os.environ["WORLD_SIZE"]) if is_distributed else len(args.devices)
 
     if args.distributed:
         torch.cuda.set_device(args.local_rank)
@@ -264,10 +267,19 @@ def main(args):
         utils.synchronize()
 
     logger = utils.setup_logger("octconv", args.output_dir, utils.get_rank())
+
     logger.info("Using {} GPUs".format(num_gpus))
+
+    # multi-gpu scaling
+    if num_gpus > 1:
+        args.lr *= num_gpus
+        args.batch_size *= num_gpus
+
+        logger.info("Scaling learning rate by {} (# GPUs)".format(num_gpus))
+        logger.info("Scaling batch size by {} (# GPUs)".format(num_gpus))
+
     logger.info("Arguments: {}".format(pprint.pformat(args.__dict__)))
 
-    device = torch.device(args.device)
     torch.backends.cudnn.benchmark = True
 
     # Data loading code
@@ -297,8 +309,27 @@ def main(args):
         raise ValueError('Invalid dataset')
 
     logger.info("Creating model")
-    model = get_model(args.arch, alpha=args.alpha, num_classes=num_classes)
-    model.to(device)
+
+    kwargs = {'num_classes': num_classes}
+    if args.arch in {'oct_resnet20', 'oct_resnet50', 'oct_resnet101', 'oct_resnet152'}:
+        kwargs['alpha'] = args.alpha
+
+    model = get_model(args.arch, **kwargs)
+
+    if args.devices is not None:
+        if len(args.devices) > 0:
+            device = torch.device('cuda')
+            if not args.distributed:
+                model = nn.DataParallel(model, args.devices)
+        else:
+            if args.distributed:
+                device = torch.device('cuda')
+            else:
+                device = torch.device('cuda:{}'.format(args.device[0]))
+    else:
+        device = 'cpu'
+
+    model = model.to(device)
 
     if args.distributed:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -363,8 +394,8 @@ if __name__ == "__main__":
     parser.add_argument('--download', action='store_true', default=False, help='download ImageNet')
     parser.add_argument('--arch', default='resnet18', help='model')
     parser.add_argument('--alpha', default=0.125, type=float, help='OctConv alpha parameter')
-    parser.add_argument('--device', default='cuda', help='GPU device')
-    parser.add_argument('-b', '--batch-size', default=32, type=int)
+    parser.add_argument('--devices', default=0, type=int, help='GPU devices', nargs='+')
+    parser.add_argument('-b', '--batch-size', default=32, type=int, help='batch size per GPU')
     parser.add_argument('--epochs', default=90, type=int, help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=16, type=int, help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.1, type=float, help='initial learning rate')
