@@ -14,8 +14,8 @@ from torchvision import transforms
 from torchvision.datasets import ImageNet, CIFAR10
 from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
 
-import examples.utils as utils
-from examples.resnet.models import oct_resnet20, oct_resnet50, oct_resnet101, oct_resnet152
+import benchmarks.utils as utils
+from benchmarks.models.resnets import oct_resnet20, oct_resnet50, oct_resnet101, oct_resnet152
 
 models = {
     'resnet18': resnet18,

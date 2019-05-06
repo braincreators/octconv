@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from examples.layers import OctConvBn, OctConvBnAct
+from benchmarks.models.layers import OctConvBn, OctConvBnAct
 
 
 class Bottleneck(nn.Module):
