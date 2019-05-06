@@ -30,8 +30,8 @@ models = {
 }
 
 
-def get_model(arch):
-    return models[arch]()
+def get_model(arch, **kwargs):
+    return models[arch](**kwargs)
 
 
 def make_data_loader(root, batch_size, workers=4, is_train=True, download=False, distributed=False):
@@ -155,9 +155,10 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, pri
 def evaluate(model, criterion, data_loader, device):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
+    logger = logging.getLogger('imagenet')
     header = 'Test:'
     with torch.no_grad():
-        for image, target in metric_logger.log_every(data_loader, 100, header):
+        for image, target in metric_logger.log_every(data_loader, logger, 100, header):
             image = image.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(image)
@@ -215,7 +216,7 @@ def main(args):
                                         distributed=args.distributed)
 
     logger.info("Creating model")
-    model = get_model(args.arch)
+    model = get_model(args.arch, alpha=args.alpha)
     model.to(device)
 
     if args.distributed:
@@ -279,6 +280,7 @@ if __name__ == "__main__":
     parser.add_argument('--root', required=True, help='dataset')
     parser.add_argument('--download', action='store_true', default=False, help='download ImageNet')
     parser.add_argument('--arch', default='resnet18', help='model')
+    parser.add_argument('--alpha', default=0.125, type=float, help='OctConv alpha parameter')
     parser.add_argument('--device', default='cuda', help='GPU device')
     parser.add_argument('-b', '--batch-size', default=32, type=int)
     parser.add_argument('--epochs', default=90, type=int, help='number of total epochs to run')

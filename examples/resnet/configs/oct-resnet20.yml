@@ -1,5 +1,6 @@
 root: ./data
-arch: oct_resnet50
+arch: oct_resnet20
+alpha: 0.5
 workers: 4
 epochs: 90
 batch-size: 256
