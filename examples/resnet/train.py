@@ -11,7 +11,7 @@ from configargparse import ArgumentParser
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torchvision.datasets import ImageNet
+from torchvision.datasets import ImageNet, CIFAR10
 from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
 
 import examples.utils as utils
@@ -34,12 +34,38 @@ def get_model(arch, **kwargs):
     return models[arch](**kwargs)
 
 
-def make_data_loader(root, batch_size, workers=4, is_train=True, download=False, distributed=False):
+def make_data_loader(root,
+                     batch_size,
+                     dataset='imagenet',
+                     workers=4,
+                     is_train=True,
+                     download=False,
+                     distributed=False):
+    if dataset == 'imagenet':
+        loader = _make_data_loader_imagenet(root=root, batch_size=batch_size, workers=workers,
+                                            is_train=is_train, download=download, distributed=distributed)
+    elif dataset == 'cifar10':
+        loader = _make_data_loader_cifar10(root=root, batch_size=batch_size, workers=workers,
+                                           is_train=is_train, download=download, distributed=distributed)
+    else:
+        raise ValueError('Invalid dataset name')
+
+    return loader
+
+
+def _make_data_loader_imagenet(root,
+                               batch_size,
+                               workers=4,
+                               is_train=True,
+                               download=False,
+                               distributed=False):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
+    logger = logging.getLogger('octconv')
+
     if is_train:
-        print("Loading training data")
+        logger.info("Loading ImageNet training data")
 
         st = time.time()
         scale = (0.08, 1.0)
@@ -53,7 +79,7 @@ def make_data_loader(root, batch_size, workers=4, is_train=True, download=False,
 
         dataset = ImageNet(root=root, split='train', download=download, transform=transform)
 
-        print("Took", time.time() - st)
+        logger.info("Took", time.time() - st)
 
         if distributed:
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
@@ -66,7 +92,7 @@ def make_data_loader(root, batch_size, workers=4, is_train=True, download=False,
                             sampler=sampler,
                             pin_memory=True)
     else:
-        print("Loading validation data")
+        logger.info("Loading ImageNet validation data")
 
         transform = transforms.Compose([
             transforms.Resize(256),
@@ -87,6 +113,53 @@ def make_data_loader(root, batch_size, workers=4, is_train=True, download=False,
                             num_workers=workers,
                             sampler=sampler,
                             pin_memory=True)
+
+    return loader
+
+
+def _make_data_loader_cifar10(root,
+                              batch_size,
+                              workers=4,
+                              is_train=True,
+                              download=False,
+                              distributed=False):
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
+
+    logger = logging.getLogger('octconv')
+
+    if is_train:
+        logger.info('Loading CIFAR10 Training')
+
+        dataset = CIFAR10(root=root, train=True,
+                          download=download, transform=transform)
+
+        if distributed:
+            sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        else:
+            sampler = torch.utils.data.RandomSampler(dataset)
+
+        loader = torch.utils.data.DataLoader(dataset,
+                                             batch_size=batch_size,
+                                             sampler=sampler,
+                                             num_workers=workers)
+    else:
+        logger.info('Loading CIFAR10 Test')
+
+        dataset = CIFAR10(root=root, train=False,
+                          download=download, transform=transform)
+
+        if distributed:
+            sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        else:
+            sampler = torch.utils.data.SequentialSampler(dataset)
+
+        loader = torch.utils.data.DataLoader(dataset,
+                                             batch_size=batch_size,
+                                             sampler=sampler,
+                                             num_workers=workers)
 
     return loader
 
@@ -127,7 +200,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, pri
     model.train()
     meters = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}]'.format(epoch)
-    logger = logging.getLogger("imagenet")
+    logger = logging.getLogger("octconv")
 
     for image, target in meters.log_every(data_loader, logger, print_freq, header):
         image, target = image.to(device), target.to(device)
@@ -155,7 +228,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, pri
 def evaluate(model, criterion, data_loader, device):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
-    logger = logging.getLogger('imagenet')
+    logger = logging.getLogger('octconv')
     header = 'Test:'
     with torch.no_grad():
         for image, target in metric_logger.log_every(data_loader, logger, 100, header):
@@ -174,13 +247,12 @@ def evaluate(model, criterion, data_loader, device):
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
-    print(' * Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top5=metric_logger.acc5))
+    logger.info(' * Acc@1 {top1.global_avg:.3f} Acc@5 '
+                '{top5.global_avg:.3f}'.format(top1=metric_logger.acc1, top5=metric_logger.acc5))
     return metric_logger.acc1.global_avg
 
 
 def main(args):
-
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = num_gpus > 1
 
@@ -191,7 +263,7 @@ def main(args):
         )
         utils.synchronize()
 
-    logger = utils.setup_logger("imagenet", args.output_dir, utils.get_rank())
+    logger = utils.setup_logger("octconv", args.output_dir, utils.get_rank())
     logger.info("Using {} GPUs".format(num_gpus))
     logger.info("Arguments: {}".format(pprint.pformat(args.__dict__)))
 
@@ -203,6 +275,7 @@ def main(args):
 
     data_loader = make_data_loader(root=args.root,
                                    batch_size=args.batch_size,
+                                   dataset=args.dataset,
                                    workers=args.workers,
                                    is_train=True,
                                    download=args.download,
@@ -210,13 +283,21 @@ def main(args):
 
     data_loader_test = make_data_loader(root=args.root,
                                         batch_size=args.batch_size,
+                                        dataset=args.dataset,
                                         workers=args.workers,
                                         is_train=False,
                                         download=args.download,
                                         distributed=args.distributed)
 
+    if args.dataset == 'imagenet':
+        num_classes = 1000
+    elif args.dataset == 'cifar10':
+        num_classes = 10
+    else:
+        raise ValueError('Invalid dataset')
+
     logger.info("Creating model")
-    model = get_model(args.arch, alpha=args.alpha)
+    model = get_model(args.arch, alpha=args.alpha, num_classes=num_classes)
     model.to(device)
 
     if args.distributed:
@@ -278,6 +359,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-c', '--config', is_config_file=True, help='config file')
     parser.add_argument('--root', required=True, help='dataset')
+    parser.add_argument('--dataset', default='imagenet', help='dataset name')
     parser.add_argument('--download', action='store_true', default=False, help='download ImageNet')
     parser.add_argument('--arch', default='resnet18', help='model')
     parser.add_argument('--alpha', default=0.125, type=float, help='OctConv alpha parameter')

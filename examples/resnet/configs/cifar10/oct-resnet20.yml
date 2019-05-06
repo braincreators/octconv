@@ -1,4 +1,6 @@
 root: ./data
+dataset: cifar10
+download: True
 arch: oct_resnet20
 alpha: 0.5
 workers: 4
@@ -6,5 +8,5 @@ epochs: 90
 batch-size: 256
 lr: 0.1
 momentum: 0.9
-weight-decay: 1e-4
+weight-decay: 1e-5
 print-freq: 10
