@@ -3,8 +3,7 @@ arch: oct_resnet50
 workers: 4
 epochs: 90
 batch-size: 256
-learning-rate: 0.1
+lr: 0.1
 momentum: 0.9
 weight-decay: 1e-4
 print-freq: 10
-gpu: 0
