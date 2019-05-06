@@ -192,7 +192,7 @@ def main(args):
 
     logger = utils.setup_logger("imagenet", args.output_dir, utils.get_rank())
     logger.info("Using {} GPUs".format(num_gpus))
-    logger.info(pprint.pformat(args.__dict__))
+    logger.info("Arguments: {}".format(pprint.pformat(args.__dict__)))
 
     device = torch.device(args.device)
     torch.backends.cudnn.benchmark = True
@@ -218,14 +218,15 @@ def main(args):
     model = get_model(args.arch)
     model.to(device)
 
+    if args.distributed:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
     logger.info(model)
 
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank,
-            # this should be removed if we update BatchNorm stats
-            broadcast_buffers=False,
+            model, device_ids=[args.local_rank], output_device=args.local_rank
         )
         model_without_ddp = model.module
 
