@@ -1,12 +1,15 @@
 root: ./data
 dataset: imagenet
 download: False
-arch: oct_resnet50
+arch: resnet18
 alpha: 0.5
 workers: 4
 epochs: 90
 batch-size: 256
-lr: 0.1
+base-lr: 0.001
+max-lr: 0.1
+lr-mode: triangular2
+lr-step-size: 2000
 momentum: 0.9
 weight-decay: 1e-5
 print-freq: 10

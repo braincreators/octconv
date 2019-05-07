@@ -15,7 +15,8 @@ from torchvision.datasets import ImageNet, CIFAR10
 from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
 
 import benchmarks.utils as utils
-from benchmarks.models.resnets import oct_resnet20, oct_resnet50, oct_resnet101, oct_resnet152
+from benchmarks.models.resnets import oct_resnet50, oct_resnet101, oct_resnet152
+from benchmarks.models.resnets_small import resnet20_small, resnet44_small, resnet56_small
 
 models = {
     'resnet18': resnet18,
@@ -23,7 +24,9 @@ models = {
     'resnet50': resnet50,
     'resnet101': resnet101,
     'resnet152': resnet152,
-    'oct_resnet20': oct_resnet20,
+    'resnet20_small': resnet20_small,
+    'resnet44_small': resnet44_small,
+    'resnet56_small': resnet56_small,
     'oct_resnet50': oct_resnet50,
     'oct_resnet101': oct_resnet101,
     'oct_resnet152': oct_resnet152
@@ -123,15 +126,18 @@ def _make_data_loader_cifar10(root,
                               is_train=True,
                               download=False,
                               distributed=False):
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])
 
     logger = logging.getLogger('octconv')
 
     if is_train:
         logger.info('Loading CIFAR10 Training')
+
+        transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
 
         dataset = CIFAR10(root=root, train=True,
                           download=download, transform=transform)
@@ -147,6 +153,11 @@ def _make_data_loader_cifar10(root,
                                              num_workers=workers)
     else:
         logger.info('Loading CIFAR10 Test')
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
 
         dataset = CIFAR10(root=root, train=False,
                           download=download, transform=transform)
@@ -269,15 +280,6 @@ def main(args):
     logger = utils.setup_logger("octconv", args.output_dir, utils.get_rank())
 
     logger.info("Using {} GPUs".format(num_gpus))
-
-    # multi-gpu scaling
-    if num_gpus > 1:
-        args.lr *= num_gpus
-        args.batch_size *= num_gpus
-
-        logger.info("Scaling learning rate by {} (# GPUs)".format(num_gpus))
-        logger.info("Scaling batch size by {} (# GPUs)".format(num_gpus))
-
     logger.info("Arguments: {}".format(pprint.pformat(args.__dict__)))
 
     torch.backends.cudnn.benchmark = True
@@ -311,13 +313,13 @@ def main(args):
     logger.info("Creating model")
 
     kwargs = {'num_classes': num_classes}
-    if args.arch in {'oct_resnet20', 'oct_resnet50', 'oct_resnet101', 'oct_resnet152'}:
+    if args.arch.startswith('oct'):
         kwargs['alpha'] = args.alpha
 
     model = get_model(args.arch, **kwargs)
 
     if args.devices is not None:
-        if len(args.devices) > 0:
+        if isinstance(args.devices, list):
             device = torch.device('cuda')
             if not args.distributed:
                 model = nn.DataParallel(model, args.devices)
@@ -325,7 +327,7 @@ def main(args):
             if args.distributed:
                 device = torch.device('cuda')
             else:
-                device = torch.device('cuda:{}'.format(args.device[0]))
+                device = torch.device('cuda:{}'.format(args.devices))
     else:
         device = 'cpu'
 
@@ -345,10 +347,16 @@ def main(args):
 
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = torch.optim.SGD(
-        model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = torch.optim.SGD(model.parameters(),
+                                lr=args.base_lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
+    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer=optimizer,
+                                                     base_lr=args.base_lr,
+                                                     max_lr=args.max_lr,
+                                                     mode=args.lr_mode,
+                                                     step_size_up=args.lr_step_size)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -361,15 +369,25 @@ def main(args):
         return
 
     logger.info("Start training")
+    best_acc1 = 0
+    best_epoch = 0
     start_time = time.time()
     for epoch in range(args.epochs):
 
         if args.distributed:
             data_loader.sampler.set_epoch(epoch)
 
+        train_one_epoch(model=model, criterion=criterion,
+                        optimizer=optimizer, data_loader=data_loader, device=device,
+                        epoch=epoch, print_freq=args.print_freq)
+
+        acc1 = evaluate(model, criterion, data_loader_test, device=device)
         lr_scheduler.step()
-        train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args.print_freq)
-        evaluate(model, criterion, data_loader_test, device=device)
+
+        if acc1 > best_acc1:
+            best_epoch = epoch
+            best_acc1 = acc1
+
         utils.synchronize()
 
         if args.output_dir:
@@ -383,27 +401,39 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
+    logger.info('Best Top-1 Accuracy: {} (Epoch {})'.format(best_acc1, best_epoch))
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(description='ImageNet training')
 
     parser.add_argument('-c', '--config', is_config_file=True, help='config file')
+
+    # Data
     parser.add_argument('--root', required=True, help='dataset')
     parser.add_argument('--dataset', default='imagenet', help='dataset name')
     parser.add_argument('--download', action='store_true', default=False, help='download ImageNet')
+    parser.add_argument('--workers', default=16, type=int, help='number of data loading workers (default: 16)')
+
+    # Model
     parser.add_argument('--arch', default='resnet18', help='model')
     parser.add_argument('--alpha', default=0.125, type=float, help='OctConv alpha parameter')
-    parser.add_argument('--devices', default=0, type=int, help='GPU devices', nargs='+')
-    parser.add_argument('-b', '--batch-size', default=32, type=int, help='batch size per GPU')
+    parser.add_argument('--devices', default=0, type=int, help='GPU devices', nargs='*')
+
+    # Batch Size & Epochs
+    parser.add_argument('--batch-size', default=32, type=int, help='total batch size')
     parser.add_argument('--epochs', default=90, type=int, help='number of total epochs to run')
-    parser.add_argument('-j', '--workers', default=16, type=int, help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=0.1, type=float, help='initial learning rate')
+
+    # Learning Rate
+    parser.add_argument('--base-lr', default=0.001, type=float, help='initial learning rate')
+    parser.add_argument('--max-lr', default=0.1, type=float, help='maximum learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
+    parser.add_argument('--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
                         dest='weight_decay')
-    parser.add_argument('--lr-step-size', default=30, type=int, help='decrease lr every step-size epochs')
-    parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
+    parser.add_argument('--lr-step-size', default=2000, type=int, help='decrease lr every step-size epochs')
+    parser.add_argument('--lr-mode', default='triangular', help='Cyclic Learning Rate scheduler mode')
+
+    # Others
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output-dir', default='./output', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')

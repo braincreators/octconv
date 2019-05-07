@@ -142,11 +142,6 @@ def _oct_resnet(inplanes, planes, **kwargs):
     return model
 
 
-def oct_resnet20(**kwargs):
-    """Constructs a OctResNet-20 model."""
-    return _oct_resnet(Bottleneck, [2, 2, 2, 2], **kwargs)
-
-
 def oct_resnet50(**kwargs):
     """Constructs a OctResNet-50 model."""
     return _oct_resnet(Bottleneck, [3, 4, 6, 3], **kwargs)
@@ -167,10 +162,6 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         x = torch.rand(1, 3, 224, 224)
-
-        model = oct_resnet20()
-        out = model(x)
-        print(out.shape)
 
         model = oct_resnet50()
         out = model(x)
