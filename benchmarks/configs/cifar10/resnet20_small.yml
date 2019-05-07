@@ -6,10 +6,8 @@ alpha: 0.5
 workers: 4
 epochs: 90
 batch-size: 128
-base-lr: 0.001
-max-lr: 0.1
-lr-mode: triangular2
-lr-step-size: 2000
+lr: 0.1
+lr-step-size: 40
 momentum: 0.9
 weight-decay: 1e-4
 print-freq: 10

@@ -126,7 +126,6 @@ def _make_data_loader_cifar10(root,
                               is_train=True,
                               download=False,
                               distributed=False):
-
     logger = logging.getLogger('octconv')
 
     if is_train:
@@ -207,13 +206,15 @@ def reduce_loss_dict(loss_dict):
     return reduced_losses
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, print_freq):
+def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, print_freq, writer=None, iter_start=0):
     model.train()
     meters = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}]'.format(epoch)
     logger = logging.getLogger("octconv")
 
+    iter_nr = iter_start
     for image, target in meters.log_every(data_loader, logger, print_freq, header):
+
         image, target = image.to(device), target.to(device)
         output = model(image)
 
@@ -234,6 +235,15 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, pri
         meters.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
         meters.meters['acc1'].update(acc1.item(), n=batch_size)
         meters.meters['acc5'].update(acc5.item(), n=batch_size)
+
+        if writer is not None:
+            writer.add_scalar('loss', losses_reduced, global_step=iter_nr)
+            writer.add_scalar('train_top1_accuracy', meters.acc1.global_avg, global_step=iter_nr)
+            writer.add_scalar('train_top5_accuracy', meters.acc5.global_avg, global_step=iter_nr)
+
+        iter_nr += 1
+
+    return iter_nr
 
 
 def evaluate(model, criterion, data_loader, device):
@@ -260,11 +270,10 @@ def evaluate(model, criterion, data_loader, device):
 
     logger.info(' * Acc@1 {top1.global_avg:.3f} Acc@5 '
                 '{top5.global_avg:.3f}'.format(top1=metric_logger.acc1, top5=metric_logger.acc5))
-    return metric_logger.acc1.global_avg
+    return metric_logger.acc1.global_avg, metric_logger.acc5.global_avg
 
 
 def main(args):
-
     is_distributed = int(os.environ["WORLD_SIZE"]) > 1 if 'WORLD_SIZE' in os.environ else False
     args.distributed = is_distributed
 
@@ -347,16 +356,10 @@ def main(args):
 
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = torch.optim.SGD(model.parameters(),
-                                lr=args.base_lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer=optimizer,
-                                                     base_lr=args.base_lr,
-                                                     max_lr=args.max_lr,
-                                                     mode=args.lr_mode,
-                                                     step_size_up=args.lr_step_size)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -368,25 +371,39 @@ def main(args):
         evaluate(model, criterion, data_loader_test, device=device)
         return
 
+    writer = None
+    if args.tensorboard and utils.is_main_process():
+        from torch.utils.tensorboard import SummaryWriter
+        writer = SummaryWriter(log_dir='{}/runs'.format(args.output_dir))
+
     logger.info("Start training")
     best_acc1 = 0
+    best_acc5 = 0
     best_epoch = 0
+    iter_nr = 0
     start_time = time.time()
     for epoch in range(args.epochs):
 
         if args.distributed:
             data_loader.sampler.set_epoch(epoch)
 
-        train_one_epoch(model=model, criterion=criterion,
-                        optimizer=optimizer, data_loader=data_loader, device=device,
-                        epoch=epoch, print_freq=args.print_freq)
+        iter_nr = train_one_epoch(model=model, criterion=criterion,
+                                  optimizer=optimizer, data_loader=data_loader, device=device,
+                                  epoch=epoch, print_freq=args.print_freq, writer=writer, iter_start=iter_nr)
 
-        acc1 = evaluate(model, criterion, data_loader_test, device=device)
+        acc1, acc5 = evaluate(model, criterion, data_loader_test, device=device)
+
+        if writer is not None:
+            writer.add_scalar('test_top1_accuracy', acc1, global_step=iter_nr)
+            writer.add_scalar('test_top5_accuracy', acc5, global_step=iter_nr)
+            writer.add_scalar('lr', optimizer.param_groups[0]["lr"], global_step=iter_nr)
+
         lr_scheduler.step()
 
         if acc1 > best_acc1:
             best_epoch = epoch
             best_acc1 = acc1
+            best_acc5 = acc5
 
         utils.synchronize()
 
@@ -401,7 +418,7 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('Training time {}'.format(total_time_str))
-    logger.info('Best Top-1 Accuracy: {} (Epoch {})'.format(best_acc1, best_epoch))
+    logger.info('Best Top-1 Accuracy: {} [Top-5 Accuracy: {}] (Epoch {})'.format(best_acc1, best_acc5, best_epoch))
 
 
 if __name__ == "__main__":
@@ -425,19 +442,19 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', default=90, type=int, help='number of total epochs to run')
 
     # Learning Rate
-    parser.add_argument('--base-lr', default=0.001, type=float, help='initial learning rate')
-    parser.add_argument('--max-lr', default=0.1, type=float, help='maximum learning rate')
+    parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
+    parser.add_argument('--lr-gamma', default=0.1, type=float, help='learning rate gamma scaling factor')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
                         dest='weight_decay')
-    parser.add_argument('--lr-step-size', default=5, type=int, help='decrease lr every step-size epochs')
-    parser.add_argument('--lr-mode', default='triangular', help='Cyclic Learning Rate scheduler mode')
+    parser.add_argument('--lr-step-size', default=40, type=int, help='decrease lr every step-size epochs')
 
     # Others
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output-dir', default='./output', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument("--test-only", dest="test_only", action="store_true", default=False, help="Only test the model")
+    parser.add_argument('--tensorboard', action='store_true', default=False, help='log to tensorboard')
 
     # distributed training parameters
     parser.add_argument("--local_rank", type=int, default=0)
