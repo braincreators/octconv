@@ -430,7 +430,7 @@ if __name__ == "__main__":
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
                         dest='weight_decay')
-    parser.add_argument('--lr-step-size', default=2000, type=int, help='decrease lr every step-size epochs')
+    parser.add_argument('--lr-step-size', default=5, type=int, help='decrease lr every step-size epochs')
     parser.add_argument('--lr-mode', default='triangular', help='Cyclic Learning Rate scheduler mode')
 
     # Others
