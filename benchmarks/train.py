@@ -1,19 +1,19 @@
 import datetime
-import os
-import time
-import pprint
 import logging
+import os
+import pprint
+import time
 
 import torch
 import torch.distributed as dist
 import torch.utils.data
 from configargparse import ArgumentParser
+from tensorboardX import SummaryWriter
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageNet, CIFAR10
 from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
-from tensorboardX import SummaryWriter
 
 import benchmarks.utils as utils
 from benchmarks.models.resnets import oct_resnet50, oct_resnet101, oct_resnet152
@@ -207,7 +207,9 @@ def reduce_loss_dict(loss_dict):
     return reduced_losses
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, print_freq, writer=None, iter_start=0):
+def train_one_epoch(model, criterion, optimizer, data_loader,
+                    device, epoch, print_freq, writer=None,
+                    iter_start=0, mixed_precision=False):
     model.train()
     meters = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}]'.format(epoch)
@@ -227,7 +229,14 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, pri
         meters.update(loss=losses_reduced)
 
         optimizer.zero_grad()
-        loss.backward()
+
+        if mixed_precision:
+            from apex import amp
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
+
         optimizer.step()
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
@@ -287,12 +296,21 @@ def main(args):
         )
         utils.synchronize()
 
+    torch.backends.cudnn.benchmark = True
+
+    if args.mixed_precision:
+        try:
+            import apex
+            from apex import amp
+        except ImportError:
+            raise ImportError('Mixed precision training requires APEX to be installed')
+
+        assert torch.backends.cudnn.enabled, "Amp requires cudnn backend to be enabled."
+
     logger = utils.setup_logger("octconv", args.output_dir, utils.get_rank())
 
     logger.info("Using {} GPUs".format(num_gpus))
     logger.info("Arguments: {}".format(pprint.pformat(args.__dict__)))
-
-    torch.backends.cudnn.benchmark = True
 
     # Data loading code
     logger.info("Loading data")
@@ -328,6 +346,16 @@ def main(args):
 
     model = get_model(args.arch, **kwargs)
 
+    criterion = nn.CrossEntropyLoss()
+
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    lr_scheduler = utils.WarmupMultiStepLR(optimizer,
+                                           milestones=args.lr_steps,
+                                           gamma=args.lr_gamma,
+                                           warmup_iters=args.lr_warmup_epochs)
+
     if args.devices is not None:
         if isinstance(args.devices, list):
             device = torch.device('cuda')
@@ -343,25 +371,21 @@ def main(args):
 
     model = model.to(device)
 
+    if args.mixed_precision:
+        model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
+
     logger.info(model)
 
     model_without_ddp = model
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank,
-            broadcast_buffers=False
-        )
+        if args.mixed_precision:
+            model = apex.parallel.DistributedDataParallel(model, delay_allreduce=True)
+        else:
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[args.local_rank], output_device=args.local_rank,
+                broadcast_buffers=False
+            )
         model_without_ddp = model.module
-
-    criterion = nn.CrossEntropyLoss()
-
-    optimizer = torch.optim.SGD(
-        model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    lr_scheduler = utils.WarmupMultiStepLR(optimizer,
-                                           milestones=args.lr_steps,
-                                           gamma=args.lr_gamma,
-                                           warmup_iters=args.lr_warmup_epochs)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -391,7 +415,8 @@ def main(args):
 
         iter_nr = train_one_epoch(model=model, criterion=criterion,
                                   optimizer=optimizer, data_loader=data_loader, device=device,
-                                  epoch=epoch, print_freq=args.print_freq, writer=writer, iter_start=iter_nr)
+                                  epoch=epoch, print_freq=args.print_freq, writer=writer,
+                                  iter_start=iter_nr, mixed_precision=args.mixed_precision)
 
         acc1, acc5 = evaluate(model, criterion, data_loader_test, device=device)
 
@@ -456,7 +481,8 @@ if __name__ == "__main__":
     parser.add_argument('--output-dir', default='./output', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument("--test-only", dest="test_only", action="store_true", default=False, help="Only test the model")
-    parser.add_argument('--tensorboard', action='store_true', default=False, help='log to tensorboard')
+    parser.add_argument('--tensorboard', action='store_true', help='log to tensorboard')
+    parser.add_argument('--mixed-precision', action='store_true', help='use APEX automatic mixed precision')
 
     # distributed training parameters
     parser.add_argument("--local_rank", type=int, default=0)
