@@ -451,7 +451,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
                         dest='weight_decay')
     parser.add_argument('--lr-steps', default=None, type=int, action='append', help='decrease lr every step epochs')
-    parser.add_argument('--lr-warmup-epochs', default=2, type=int, nargs='*', help='lr every ')
+    parser.add_argument('--lr-warmup-epochs', default=2, type=int, help='number of warmup epochs')
 
     # Others
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
