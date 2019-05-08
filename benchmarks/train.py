@@ -83,7 +83,7 @@ def _make_data_loader_imagenet(root,
 
         dataset = ImageNet(root=root, split='train', download=download, transform=transform)
 
-        logger.info("Took", time.time() - st)
+        logger.info("Took: {}".format(time.time() - st))
 
         if distributed:
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
@@ -358,7 +358,6 @@ def main(args):
     optimizer = torch.optim.SGD(
         model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
     lr_scheduler = utils.WarmupMultiStepLR(optimizer,
                                            milestones=args.lr_steps,
                                            gamma=args.lr_gamma,
@@ -376,8 +375,8 @@ def main(args):
 
     writer = None
     if args.tensorboard and utils.is_main_process():
-        timestamp = datetime.datetime.timestamp(datetime.datetime.now())
-        writer = SummaryWriter(log_dir='{}/runs/octconv_{}'.format(args.output_dir, timestamp))
+        timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d_%H:%M:%S')
+        writer = SummaryWriter(log_dir='{}/runs/{}_{}'.format(args.output_dir, args.arch, timestamp))
 
     logger.info("Start training")
     best_acc1 = 0
@@ -402,13 +401,12 @@ def main(args):
             writer.add_scalar('lr', optimizer.param_groups[0]["lr"], global_step=iter_nr)
 
         lr_scheduler.step()
+        utils.synchronize()
 
         if acc1 > best_acc1:
             best_epoch = epoch
             best_acc1 = acc1
             best_acc5 = acc5
-
-        utils.synchronize()
 
         if args.output_dir:
             utils.save_on_master({
