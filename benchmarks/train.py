@@ -360,7 +360,11 @@ def main(args):
     optimizer = torch.optim.SGD(
         model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
+    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
+    lr_scheduler = utils.WarmupMultiStepLR(optimizer,
+                                           milestones=args.lr_steps,
+                                           gamma=args.lr_gamma,
+                                           warmup_iters=args.lr_warmup_epochs)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -448,7 +452,8 @@ if __name__ == "__main__":
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)',
                         dest='weight_decay')
-    parser.add_argument('--lr-step-size', default=40, type=int, help='decrease lr every step-size epochs')
+    parser.add_argument('--lr-steps', default=None, type=int, action='append', help='decrease lr every step epochs')
+    parser.add_argument('--lr-warmup-epochs', default=2, type=int, nargs='*', help='lr every ')
 
     # Others
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
@@ -461,6 +466,9 @@ if __name__ == "__main__":
     parser.add_argument("--local_rank", type=int, default=0)
 
     args = parser.parse_args()
+
+    if not args.lr_steps:
+        args.lr_steps = [40, 80]
 
     if args.output_dir:
         utils.mkdir(args.output_dir)

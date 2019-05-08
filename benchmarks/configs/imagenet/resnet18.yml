@@ -1,7 +1,7 @@
 root: ./data
 dataset: imagenet
 download: False
-arch: resnet18
+arch: resnet50
 alpha: 0.5
 workers: 4
 epochs: 90

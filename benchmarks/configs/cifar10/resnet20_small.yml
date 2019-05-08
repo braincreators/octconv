@@ -7,7 +7,7 @@ workers: 4
 epochs: 90
 batch-size: 128
 lr: 0.1
-lr-step-size: 40
+lr-steps: [40, 80]
 momentum: 0.9
 weight-decay: 1e-4
 print-freq: 10
