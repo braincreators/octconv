@@ -343,15 +343,13 @@ def main(args):
 
     model = model.to(device)
 
-    if args.distributed:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
     logger.info(model)
 
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank
+            model, device_ids=[args.local_rank], output_device=args.local_rank,
+            broadcast_buffers=False
         )
         model_without_ddp = model.module
 
