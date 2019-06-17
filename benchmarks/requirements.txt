@@ -1,0 +1,7 @@
+torch>=1.0.0
+octconv>=0.1.0
+git+https://github.com/pytorch/vision.git@7a4845a99f845d4e2fc3ceb5b6cdf7fed29dc662#egg=torchvision
+configargparse==0.14.0
+scipy==1.2.1
+tensorboardx==1.6
+tensorboard==1.12.2

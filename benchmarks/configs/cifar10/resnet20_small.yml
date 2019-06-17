@@ -1,0 +1,14 @@
+root: ./data
+dataset: cifar10
+download: True
+arch: resnet20_small
+alpha: 0.5
+workers: 4
+epochs: 90
+batch-size: 128
+lr: 0.1
+lr-steps: [40, 80]
+lr-warmup-epochs: 5
+momentum: 0.9
+weight-decay: 1e-4
+print-freq: 10
