@@ -155,22 +155,3 @@ def oct_resnet101(**kwargs):
 def oct_resnet152(**kwargs):
     """Constructs a OctResNet-152 model."""
     return _oct_resnet(Bottleneck, [3, 8, 36, 3], **kwargs)
-
-
-if __name__ == '__main__':
-    import torch
-
-    with torch.no_grad():
-        x = torch.rand(1, 3, 224, 224)
-
-        model = oct_resnet50()
-        out = model(x)
-        print(out.shape)
-
-        model = oct_resnet101()
-        out = model(x)
-        print(out.shape)
-
-        model = oct_resnet152()
-        out = model(x)
-        print(out.shape)
