@@ -13,7 +13,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageNet, CIFAR10
-from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
+from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152, ResNet
 
 import benchmarks.utils as utils
 from benchmarks.models.resnets import oct_resnet50, oct_resnet101, oct_resnet152
@@ -33,23 +33,40 @@ models = {
     'oct_resnet152': oct_resnet152
 }
 
+grayscale_supported_models = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
+
 
 def get_model(arch, **kwargs):
     return models[arch](**kwargs)
+
+
+def model_to_grayscale(model):
+    if isinstance(model, ResNet):
+        if hasattr(model, "conv1") and isinstance(model.conv1, nn.Conv2d):
+            model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            nn.init.kaiming_normal_(model.conv1.weight, mode='fan_out', nonlinearity='relu')
+    else:
+        raise NotImplementedError("Model does not support grayscale conversion yet. "
+                                  "SUpported models: {}".format(grayscale_supported_models))
+
+
+def to_grayscale(tensor):
+    return (tensor * (torch.tensor([0.299, 0.587, 0.114])[:, None, None])).sum(0, keepdim=True)
 
 
 def make_data_loader(root,
                      batch_size,
                      dataset='imagenet',
                      workers=4,
+                     grayscale=False,
                      is_train=True,
                      download=False,
                      distributed=False):
     if dataset == 'imagenet':
-        loader = _make_data_loader_imagenet(root=root, batch_size=batch_size, workers=workers,
+        loader = _make_data_loader_imagenet(root=root, batch_size=batch_size, workers=workers, grayscale=grayscale,
                                             is_train=is_train, download=download, distributed=distributed)
     elif dataset == 'cifar10':
-        loader = _make_data_loader_cifar10(root=root, batch_size=batch_size, workers=workers,
+        loader = _make_data_loader_cifar10(root=root, batch_size=batch_size, workers=workers, grayscale=grayscale,
                                            is_train=is_train, download=download, distributed=distributed)
     else:
         raise ValueError('Invalid dataset name')
@@ -61,6 +78,7 @@ def _make_data_loader_imagenet(root,
                                batch_size,
                                workers=4,
                                is_train=True,
+                               grayscale=False,
                                download=False,
                                distributed=False):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -74,12 +92,18 @@ def _make_data_loader_imagenet(root,
         st = time.time()
         scale = (0.08, 1.0)
 
-        transform = transforms.Compose([
+        transform_list = [
             transforms.RandomResizedCrop(224, scale=scale),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
-        ])
+        ]
+
+        if grayscale:
+            logger.info("Converting dataset to grayscale")
+            transform_list.append(to_grayscale)
+
+        transform = transforms.Compose(transform_list)
 
         dataset = ImageNet(root=root, split='train', download=download, transform=transform)
 
@@ -98,12 +122,18 @@ def _make_data_loader_imagenet(root,
     else:
         logger.info("Loading ImageNet validation data")
 
-        transform = transforms.Compose([
+        transform_list = [
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
-        ])
+        ]
+
+        if grayscale:
+            logger.info("Converting dataset to grayscale")
+            transform_list.append(to_grayscale)
+
+        transform = transforms.Compose(transform_list)
 
         dataset = ImageNet(root=root, split='val', download=download, transform=transform)
 
@@ -124,6 +154,7 @@ def _make_data_loader_imagenet(root,
 def _make_data_loader_cifar10(root,
                               batch_size,
                               workers=4,
+                              grayscale=False,
                               is_train=True,
                               download=False,
                               distributed=False):
@@ -132,12 +163,18 @@ def _make_data_loader_cifar10(root,
     if is_train:
         logger.info('Loading CIFAR10 Training')
 
-        transform = transforms.Compose([
+        transform_list = [
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
+        ]
+
+        if grayscale:
+            logger.info("Converting dataset to grayscale")
+            transform_list.append(to_grayscale)
+
+        transform = transforms.Compose(transform_list)
 
         dataset = CIFAR10(root=root, train=True,
                           download=download, transform=transform)
@@ -154,10 +191,16 @@ def _make_data_loader_cifar10(root,
     else:
         logger.info('Loading CIFAR10 Test')
 
-        transform = transforms.Compose([
+        transform_list = [
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
+        ]
+
+        if grayscale:
+            logger.info("Converting dataset to grayscale")
+            transform_list.append(to_grayscale)
+
+        transform = transforms.Compose(transform_list)
 
         dataset = CIFAR10(root=root, train=False,
                           download=download, transform=transform)
@@ -318,6 +361,7 @@ def main(args):
     data_loader = make_data_loader(root=args.root,
                                    batch_size=args.batch_size,
                                    dataset=args.dataset,
+                                   grayscale=args.grayscale,
                                    workers=args.workers,
                                    is_train=True,
                                    download=args.download,
@@ -326,6 +370,7 @@ def main(args):
     data_loader_test = make_data_loader(root=args.root,
                                         batch_size=args.batch_size,
                                         dataset=args.dataset,
+                                        grayscale=args.grayscale,
                                         workers=args.workers,
                                         is_train=False,
                                         download=args.download,
@@ -345,6 +390,9 @@ def main(args):
         kwargs['alpha'] = args.alpha
 
     model = get_model(args.arch, **kwargs)
+
+    if args.grayscale:
+        model_to_grayscale(model)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -457,7 +505,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', default='imagenet', help='dataset name')
     parser.add_argument('--download', action='store_true', default=False, help='download ImageNet')
     parser.add_argument('--workers', default=16, type=int, help='number of data loading workers (default: 16)')
-
+    parser.add_argument('--grayscale', default=False, action='store_true',
+                        help="use to convert input and model to grayscale")
     # Model
     parser.add_argument('--arch', default='resnet18', help='model')
     parser.add_argument('--alpha', default=0.125, type=float, help='OctConv alpha parameter')
