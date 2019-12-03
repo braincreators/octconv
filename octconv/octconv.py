@@ -11,6 +11,8 @@ class OctConv2d(nn.Module):
                  stride=1,
                  padding=0,
                  alpha=0.5,
+                 dilation=1,
+                 groups=1,
                  bias=False):
 
         super(OctConv2d, self).__init__()
@@ -46,6 +48,8 @@ class OctConv2d(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
         self.bias = bias
 
         self.pool = nn.AvgPool2d(kernel_size=(2, 2), stride=2)
@@ -54,6 +58,8 @@ class OctConv2d(nn.Module):
                                   out_channels=self.out_channels['high'],
                                   kernel_size=kernel_size,
                                   padding=padding,
+                                  dilation=dilation,
+                                  groups=groups,
                                   bias=bias) \
             if not (self.alpha_in == 1 or self.alpha_out == 1) else None
 
@@ -61,6 +67,8 @@ class OctConv2d(nn.Module):
                                   out_channels=self.out_channels['low'],
                                   kernel_size=kernel_size,
                                   padding=padding,
+                                  dilation=dilation,
+                                  groups=groups,
                                   bias=bias) \
             if not (self.alpha_in == 1 or self.alpha_out == 0) else None
 
@@ -68,6 +76,8 @@ class OctConv2d(nn.Module):
                                   out_channels=self.out_channels['high'],
                                   kernel_size=kernel_size,
                                   padding=padding,
+                                  dilation=dilation,
+                                  groups=groups,
                                   bias=bias) \
             if not (self.alpha_in == 0 or self.alpha_out == 1) else None
 
@@ -75,6 +85,8 @@ class OctConv2d(nn.Module):
                                   out_channels=self.out_channels['low'],
                                   kernel_size=kernel_size,
                                   padding=padding,
+                                  dilation=dilation,
+                                  groups=groups,
                                   bias=bias) \
             if not (self.alpha_in == 0 or self.alpha_out == 0) else None
 
@@ -127,10 +139,12 @@ class OctConv2d(nn.Module):
     def __repr__(self):
         s = """{}(in_channels=(low: {}, high: {}), out_channels=(low: {}, high: {}),
           kernel_size=({kernel}, {kernel}), stride=({stride}, {stride}),
-          padding={}, alphas=({}, {}), bias={})""".format(
+          padding={}, alphas=({}, {}), dilation={dilation}, groups={groups},
+          bias={})""".format(
             self._get_name(), self.in_channels['low'], self.in_channels['high'],
             self.out_channels['low'], self.out_channels['high'],
             self.padding, self.alpha_in, self.alpha_out, self.bias,
-            kernel=self.kernel_size, stride=self.stride)
+            kernel=self.kernel_size, stride=self.stride, dilation=self.dilation,
+            groups=self.groups)
 
         return s
