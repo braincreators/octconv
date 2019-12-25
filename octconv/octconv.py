@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class OctConv2d(nn.Module):
 
     def __init__(self,
@@ -14,6 +13,22 @@ class OctConv2d(nn.Module):
                  dilation=1,
                  groups=False,
                  bias=False):
+
+        """
+        Octave convolution from the 2019 article
+        Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution
+        Extend the 2D convolution with the octave reduction.
+        Args:
+            in_channels (int): Number of channels in the input image
+            out_channels (int): Number of channels produced by the convolution
+            kernel_size (int or tuple): Size of the convolving kernel
+            stride (int or tuple, optional): Stride of the convolution. Default: 1
+            padding (int or tuple, optional): Zero-padding added to both sides of the input. Default: 0
+            dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
+            alpha (float or tuple, optional): Reduction for the (input, output) octave part of the convolution. Default: 0.5
+            groups (bool, optional): Decides if the convolution must be group-wise, with groups=in_channels. Default: False
+            bias (bool, optional): If ``True``, adds a learnable bias to the output. Default: ``True``
+        """
 
         super(OctConv2d, self).__init__()
 
@@ -45,24 +60,25 @@ class OctConv2d(nn.Module):
             'low': out_channels - out_ch_hf
         }
 
+        # groups
+        self.groups = {
+            'high': 1,
+            'low': 1
+        }
+
+        if groups:
+            if self.alpha_out > 0 and self.in_channels['high'] <= self.out_channels['high']:
+                self.groups['high'] = in_ch_hf
+
+            if self.alpha_in > 0 and self.in_channels['low'] <= self.out_channels['low']:
+                self.groups['low'] = in_channels - in_ch_hf
+
+
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
-        self.groups = groups
         self.bias = bias
-
-        # groups
-        if groups:
-            self.groups = {
-                'high': in_ch_hf,
-                'low': in_channels - in_ch_hf
-            }
-        else:
-            self.groups = {
-                'high': 1,
-                'low': 1
-            }
 
         self.pool = nn.AvgPool2d(kernel_size=(2, 2), stride=2)
 
@@ -151,12 +167,12 @@ class OctConv2d(nn.Module):
     def __repr__(self):
         s = """{}(in_channels=(low: {}, high: {}), out_channels=(low: {}, high: {}),
           kernel_size=({kernel}, {kernel}), stride=({stride}, {stride}),
-          padding={}, alphas=({}, {}), dilation={dilation}, groups={groups},
+          padding={}, alphas=({}, {}), dilation={dilation}, groups=(low: {groupsl}, high: {groupsh}),
           bias={})""".format(
             self._get_name(), self.in_channels['low'], self.in_channels['high'],
             self.out_channels['low'], self.out_channels['high'],
             self.padding, self.alpha_in, self.alpha_out, self.bias,
             kernel=self.kernel_size, stride=self.stride, dilation=self.dilation,
-            groups=self.groups)
+            groupsl=self.groups['low'], groupsh=self.groups['high'])
 
         return s
