@@ -27,7 +27,7 @@ class OctConv2d(nn.Module):
             dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
             alpha (float or tuple, optional): Reduction for the (input, output) octave part of the convolution. Default: 0.5
             groups (bool, optional): Decides if the convolution must be group-wise, with groups=in_channels. Default: False
-            bias (bool, optional): If ``True``, adds a learnable bias to the output. Default: ``True``
+            bias (bool, optional): If ``True``, adds a learnable bias to the output. Default: ``False``
         """
 
         super(OctConv2d, self).__init__()
@@ -66,7 +66,7 @@ class OctConv2d(nn.Module):
             'low': 1
         }
 
-        if groups:
+        if type(groups) == bool and  groups:
             if self.alpha_out > 0 and self.in_channels['high'] <= self.out_channels['high']:
                 self.groups['high'] = in_ch_hf
 
