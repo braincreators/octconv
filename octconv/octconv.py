@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class OctConv2d(nn.Module):
 
     def __init__(self,
@@ -25,8 +26,10 @@ class OctConv2d(nn.Module):
             stride (int or tuple, optional): Stride of the convolution. Default: 1
             padding (int or tuple, optional): Zero-padding added to both sides of the input. Default: 0
             dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
-            alpha (float or tuple, optional): Reduction for the (input, output) octave part of the convolution. Default: 0.5
-            groups (bool, optional): Decides if the convolution must be group-wise, with groups=in_channels. Default: False
+            alpha (float or tuple, optional): Reduction for the (input, output) octave part of the convolution.
+                Default: 0.5
+            groups (bool, optional): Decides if the convolution must be group-wise, with groups=in_channels.
+                Default: False
             bias (bool, optional): If ``True``, adds a learnable bias to the output. Default: ``False``
         """
 
@@ -72,7 +75,6 @@ class OctConv2d(nn.Module):
 
             if self.alpha_in > 0 and self.in_channels['low'] <= self.out_channels['low']:
                 self.groups['low'] = in_channels - in_ch_hf
-
 
         self.kernel_size = kernel_size
         self.stride = stride
