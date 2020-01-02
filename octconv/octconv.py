@@ -69,7 +69,7 @@ class OctConv2d(nn.Module):
             'low': 1
         }
 
-        if type(groups) == bool and  groups:
+        if type(groups) == bool and groups:
             if self.alpha_out > 0 and self.in_channels['high'] <= self.out_channels['high']:
                 self.groups['high'] = in_ch_hf
 
