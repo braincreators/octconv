@@ -5,13 +5,21 @@ stages:
 
 cache: pip
 
+deploy:
+  provider: pypi
+  username: braincreators
+  password:
+    secure: LNomtSmnhSXz8VlVlnM2afB1RO1Q5009zDgxs4/icU5CHr2fIQpaW4AQCHVo3OPlp1PJlbSEL107uRRTCJ0GcDNKxf7xcjJpxpjsSowlI9wDAqP7GDlHNK55zI15O7VLBq5RRW06byv3BIx1hZQC8MfSrMWTEOLpMfCMOgy97ik7wWTRmp/NiquDLfmtovOtH0mADAN4D1h2hRFwuUc2Za/ixbpXouutW6cN6pvMFCraVHcEcDVF7av9tLYH3mNsx4DOGDXZ2/X67FhSFxbDyHCTgYKdh4wGOzo2zxzGdc4j19zKYisNfi7YFU/L4cPNndddJ20fJbcE84XlOIpeJRpKwivv/z6WnbDFgZfl23CPXTSJ5g1M+SuJ1VlOiIExVKiPDVbngLdkut6ZpPAE099NtPb29WfhHyYqD3s47kEuECHdfWsJpd7/pbDOkc/V4hKm/i9IFf618Df+py0mp5e6ZEjBGCbZJ4rl/ootq5h3zUK5dyM/t12rXU2CmPv/MKu73vijnrUKDCKW9x0L8FNUo9QURM+wVB5Sv2vUT+mgD91o81dwLawA71Utsrw7Rtq2NOcRKBwH8zJmi1Xwh/VTHDtT8mMSJOGqca0ywHS5AVqViV67FK6bHC4LgORn+sUA8CQg85QJzO9/AWpxYw0T6wQilZYsCCQ7uevqdqY=
+  edge: true
+  on:
+    tags: true
+
 jobs:
   include:
   - stage: quality-assurance
     python: '3.6'
     install: pip install flake8
     script: flake8
-
   - stage: quality-assurance
     python: '3.6'
     before_install:
